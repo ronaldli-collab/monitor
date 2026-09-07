@@ -292,30 +292,42 @@ table = st.session_state.latest_table
 st.markdown(
     """
     <style>
-    /* make every column in a row stretch to the same height as its
-       tallest sibling, so cells within a bucket row line up */
-    div[data-testid="stHorizontalBlock"] {
-        align-items: stretch;
-    }
-    div[data-testid="column"] {
-        display: flex;
-    }
-    div[data-testid="column"] > div {
+    table.oif-table {
         width: 100%;
+        border-collapse: separate;
+        border-spacing: 10px;
+        table-layout: fixed;
     }
-
+    table.oif-table th {
+        text-align: left;
+        font-weight: 700;
+        padding-bottom: 4px;
+    }
+    table.oif-table th.bucket-col,
+    table.oif-table td.bucket-col {
+        width: 110px;
+        text-align: left;
+        font-weight: 700;
+        vertical-align: top;
+        padding-top: 14px;
+    }
+    td.oif-td {
+        border: 1px solid rgba(128, 128, 128, 0.3);
+        border-radius: 8px;
+        padding: 10px;
+        vertical-align: top;
+    }
+    /* every td in the same <tr> is naturally the same height as its
+       tallest sibling, so this stretches the count banner + list
+       block to fill that shared row height */
     .oif-cell {
         display: flex;
         flex-direction: column;
         height: 100%;
-        border: 1px solid rgba(128, 128, 128, 0.3);
-        border-radius: 8px;
-        padding: 10px;
-        margin-bottom: 8px;
     }
     .oif-count {
         text-align: center;
-        font-size: 20px;
+        font-size: 42px;
         font-weight: 700;
         line-height: 1.1;
         margin-bottom: 8px;
@@ -336,28 +348,35 @@ st.markdown(
 if table is None:
     st.info("Waiting for first successful fetch.")
 else:
-    header_cols = st.columns([1] + [2] * len(STATUSES))
-    header_cols[0].markdown("**Bucket**")
-    for c, status in zip(header_cols[1:], STATUSES):
-        c.markdown(f"**{status}**")
+    header_html = "<th class='bucket-col'>Bucket</th>" + "".join(
+        f"<th>{status}</th>" for status in STATUSES
+    )
 
+    row_html_parts = []
     for bucket in DAY_BUCKETS:
-        row_cols = st.columns([1] + [2] * len(STATUSES))
-        row_cols[0].markdown(f"**{bucket}**")
-
-        for c, status in zip(row_cols[1:], STATUSES):
+        cells = [f"<td class='bucket-col'>{bucket}</td>"]
+        for status in STATUSES:
             oifs = table[status][bucket]
             list_html = "<br>".join(oifs) if oifs else "(none)"
-            with c:
-                st.markdown(
-                    f"""
+            cells.append(
+                f"""
+                <td class="oif-td">
                     <div class="oif-cell">
                         <div class="oif-count">{len(oifs)}</div>
                         <div class="oif-list">{list_html}</div>
                     </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+                </td>
+                """
+            )
+        row_html_parts.append(f"<tr>{''.join(cells)}</tr>")
+
+    table_html = f"""
+    <table class="oif-table">
+        <thead><tr>{header_html}</tr></thead>
+        <tbody>{''.join(row_html_parts)}</tbody>
+    </table>
+    """
+    st.markdown(table_html, unsafe_allow_html=True)
 
 if not HAVE_AUTOREFRESH:
     st.caption(
