@@ -208,7 +208,12 @@ st.session_state.setdefault("status_msg", "Not fetched yet.")
 st.session_state.setdefault("auto_refresh", True)
 st.session_state.setdefault("interval_seconds", DEFAULT_REFRESH_SECONDS)
 
-st.title("OIF Monitor")
+title_col, refresh_col = st.columns([6, 1])
+with title_col:
+    st.title("OIF Monitor")
+with refresh_col:
+    st.write("")  # vertical spacer so the button lines up with the title
+    refresh_clicked = st.button("Refresh now", use_container_width=True)
 
 token = resolve_token()
 with st.sidebar:
@@ -230,7 +235,6 @@ with st.sidebar:
         step=10,
         value=st.session_state.interval_seconds,
     )
-    refresh_clicked = st.button("Refresh now", use_container_width=True)
 
     if HAVE_AUTOREFRESH:
         st.caption("Auto-refresh is active via streamlit-autorefresh.")
