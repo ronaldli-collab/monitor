@@ -13,8 +13,9 @@ dashboard with:
       streamlit_autorefresh (falls back to manual-only if that
       package isn't installed)
     - A status line showing last-updated time or the last error
-    - A grid of Status x Day-bucket cells, each with an OIF count and
-      an expander you can open to see the full OIF list
+    - A grid of Status x Day-bucket cells, each showing a large
+      centered OIF count and the full OIF list directly beneath it
+      (no expander — everything stays visible)
 
 Run locally:   streamlit run oif_monitor_streamlit.py
 Deploy notes:  see the bottom of this file / the accompanying README
@@ -285,6 +286,36 @@ status_placeholder.caption(st.session_state.status_msg)
 # ---- render grid ----
 table = st.session_state.latest_table
 
+# Small CSS assist: cell container gets a border so each Status/Bucket
+# block reads as a distinct card now that content isn't tucked away
+# in an expander.
+st.markdown(
+    """
+    <style>
+    .oif-cell {
+        border: 1px solid rgba(128, 128, 128, 0.3);
+        border-radius: 8px;
+        padding: 10px;
+        margin-bottom: 8px;
+        min-height: 60px;
+    }
+    .oif-count {
+        text-align: center;
+        font-size: 42px;
+        font-weight: 700;
+        line-height: 1.1;
+        margin-bottom: 6px;
+    }
+    .oif-list {
+        white-space: pre-wrap;
+        font-size: 13px;
+        text-align: center;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 if table is None:
     st.info("Waiting for first successful fetch.")
 else:
@@ -299,13 +330,17 @@ else:
 
         for c, status in zip(row_cols[1:], STATUSES):
             oifs = table[status][bucket]
+            list_html = "<br>".join(oifs) if oifs else "(none)"
             with c:
-                st.markdown(f"({len(oifs)})")
-                with st.expander("View OIFs", expanded=False):
-                    if oifs:
-                        st.text("\n".join(oifs))
-                    else:
-                        st.text("(none)")
+                st.markdown(
+                    f"""
+                    <div class="oif-cell">
+                        <div class="oif-count">{len(oifs)}</div>
+                        <div class="oif-list">{list_html}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
 if not HAVE_AUTOREFRESH:
     st.caption(
