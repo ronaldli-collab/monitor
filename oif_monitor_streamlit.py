@@ -13,9 +13,8 @@ dashboard with:
       streamlit_autorefresh (falls back to manual-only if that
       package isn't installed)
     - A status line showing last-updated time or the last error
-    - A grid of Status x Day-bucket cells, each showing a large
-      centered OIF count and the full OIF list directly beneath it
-      (no expander — everything stays visible)
+    - A grid of Status x Day-bucket cells, each with an OIF count and
+      an expander you can open to see the full OIF list
 
 Run locally:   streamlit run oif_monitor_streamlit.py
 Deploy notes:  see the bottom of this file / the accompanying README
@@ -286,97 +285,27 @@ status_placeholder.caption(st.session_state.status_msg)
 # ---- render grid ----
 table = st.session_state.latest_table
 
-# Small CSS assist: cell container gets a border so each Status/Bucket
-# block reads as a distinct card now that content isn't tucked away
-# in an expander.
-st.markdown(
-    """
-    <style>
-    table.oif-table {
-        width: 100%;
-        border-collapse: separate;
-        border-spacing: 10px;
-        table-layout: fixed;
-    }
-    table.oif-table th {
-        text-align: left;
-        font-weight: 700;
-        padding-bottom: 4px;
-    }
-    table.oif-table th.bucket-col,
-    table.oif-table td.bucket-col {
-        width: 110px;
-        text-align: left;
-        font-weight: 700;
-        vertical-align: top;
-        padding-top: 14px;
-    }
-    td.oif-td {
-        border: 1px solid rgba(128, 128, 128, 0.3);
-        border-radius: 8px;
-        padding: 10px;
-        vertical-align: top;
-    }
-    /* every td in the same <tr> is naturally the same height as its
-       tallest sibling, so this stretches the count banner + list
-       block to fill that shared row height */
-    .oif-cell {
-        display: flex;
-        flex-direction: column;
-        height: 100%;
-    }
-    .oif-count {
-        text-align: center;
-        font-size: 42px;
-        font-weight: 700;
-        line-height: 1.1;
-        margin-bottom: 8px;
-        background-color: rgba(128, 128, 128, 0.15);
-        border-radius: 6px;
-        padding: 6px 0;
-    }
-    .oif-list {
-        white-space: pre-wrap;
-        font-size: 13px;
-        text-align: center;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
 if table is None:
     st.info("Waiting for first successful fetch.")
 else:
-    header_html = "<th class='bucket-col'>Bucket</th>" + "".join(
-        f"<th>{status}</th>" for status in STATUSES
-    )
+    header_cols = st.columns([1] + [2] * len(STATUSES))
+    header_cols[0].markdown("**Bucket**")
+    for c, status in zip(header_cols[1:], STATUSES):
+        c.markdown(f"**{status}**")
 
-    row_html_parts = []
     for bucket in DAY_BUCKETS:
-        cells = [f"<td class='bucket-col'>{bucket}</td>"]
-        for status in STATUSES:
-            oifs = table[status][bucket]
-            list_html = "<br>".join(oifs) if oifs else "(none)"
-            cells.append(
-                f"""
-                <td class="oif-td">
-                    <div class="oif-cell">
-                        <div class="oif-count">{len(oifs)}</div>
-                        <div class="oif-list">{list_html}</div>
-                    </div>
-                </td>
-                """
-            )
-        row_html_parts.append(f"<tr>{''.join(cells)}</tr>")
+        row_cols = st.columns([1] + [2] * len(STATUSES))
+        row_cols[0].markdown(f"**{bucket}**")
 
-    table_html = f"""
-    <table class="oif-table">
-        <thead><tr>{header_html}</tr></thead>
-        <tbody>{''.join(row_html_parts)}</tbody>
-    </table>
-    """
-    st.markdown(table_html, unsafe_allow_html=True)
+        for c, status in zip(row_cols[1:], STATUSES):
+            oifs = table[status][bucket]
+            with c:
+                st.markdown(f"({len(oifs)})")
+                with st.expander("View OIFs", expanded=False):
+                    if oifs:
+                        st.text("\n".join(oifs))
+                    else:
+                        st.text("(none)")
 
 if not HAVE_AUTOREFRESH:
     st.caption(
