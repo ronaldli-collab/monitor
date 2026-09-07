@@ -13,8 +13,9 @@ dashboard with:
       streamlit_autorefresh (falls back to manual-only if that
       package isn't installed)
     - A status line showing last-updated time or the last error
-    - A grid of Status x Day-bucket cells, each with an OIF count and
-      an expander you can open to see the full OIF list
+    - A grid of Status x Day-bucket cells, each showing an OIF count
+      (large, centered, on a light gray background) plus the full
+      OIF list underneath, always visible (no expander)
 
 Run locally:   streamlit run oif_monitor_streamlit.py
 Deploy notes:  see the bottom of this file / the accompanying README
@@ -27,6 +28,7 @@ deployment well), this reads the token in this order:
     3. a manual text-input box in the sidebar (session-only, not saved)
 """
 
+import html
 import os
 import time
 from datetime import date, datetime
@@ -285,27 +287,97 @@ status_placeholder.caption(st.session_state.status_msg)
 # ---- render grid ----
 table = st.session_state.latest_table
 
+# CSS for the grid: uniform cell size per row, a light-gray count
+# section (big, bold, centered) sitting above an always-visible,
+# scrollable list of every OIF number in that cell (no expander).
+st.markdown(
+    """
+    <style>
+    .oif-grid {
+        display: grid;
+        grid-template-columns: 140px repeat(3, 1fr);
+        gap: 10px;
+        margin-top: 10px;
+        align-items: stretch;
+    }
+    .oif-header {
+        font-weight: 700;
+        text-align: center;
+        padding: 6px 4px;
+    }
+    .oif-bucket-label {
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+    }
+    .oif-cell {
+        display: flex;
+        flex-direction: column;
+        border: 1px solid rgba(128, 128, 128, 0.4);
+        border-radius: 8px;
+        overflow: hidden;
+        height: 260px;
+    }
+    .oif-count {
+        background-color: #e0e0e0;
+        color: #111111;
+        font-size: 20px;
+        font-weight: 700;
+        text-align: center;
+        padding: 10px 0;
+        flex-shrink: 0;
+    }
+    .oif-list {
+        flex: 1 1 auto;
+        overflow-y: auto;
+        padding: 8px 10px;
+        font-family: "Source Code Pro", monospace;
+        font-size: 13px;
+        line-height: 1.5;
+    }
+    .oif-list-empty {
+        color: #999999;
+        font-style: italic;
+        text-align: center;
+        margin-top: 10px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 if table is None:
     st.info("Waiting for first successful fetch.")
 else:
-    header_cols = st.columns([1] + [2] * len(STATUSES))
-    header_cols[0].markdown("**Bucket**")
-    for c, status in zip(header_cols[1:], STATUSES):
-        c.markdown(f"**{status}**")
+    grid_html = ['<div class="oif-grid">']
+
+    grid_html.append('<div class="oif-header"></div>')
+    for status in STATUSES:
+        grid_html.append(f'<div class="oif-header">{html.escape(status)}</div>')
 
     for bucket in DAY_BUCKETS:
-        row_cols = st.columns([1] + [2] * len(STATUSES))
-        row_cols[0].markdown(f"**{bucket}**")
-
-        for c, status in zip(row_cols[1:], STATUSES):
+        grid_html.append(
+            f'<div class="oif-bucket-label">{html.escape(bucket)}</div>'
+        )
+        for status in STATUSES:
             oifs = table[status][bucket]
-            with c:
-                st.markdown(f"({len(oifs)})")
-                with st.expander("View OIFs", expanded=False):
-                    if oifs:
-                        st.text("\n".join(oifs))
-                    else:
-                        st.text("(none)")
+            count = len(oifs)
+
+            if oifs:
+                list_body = "<br>".join(html.escape(str(oif)) for oif in oifs)
+                list_html = f'<div class="oif-list">{list_body}</div>'
+            else:
+                list_html = '<div class="oif-list"><div class="oif-list-empty">(none)</div></div>'
+
+            grid_html.append(
+                '<div class="oif-cell">'
+                f'<div class="oif-count">{count}</div>'
+                f"{list_html}"
+                "</div>"
+            )
+
+    grid_html.append("</div>")
+    st.markdown("".join(grid_html), unsafe_allow_html=True)
 
 if not HAVE_AUTOREFRESH:
     st.caption(
