@@ -30,10 +30,18 @@ deployment well), this reads the token in this order:
 Day-bucket freshness: the raw API data is only re-pulled on a fetch
 (manual click or the configured auto-refresh interval), but the
 Same Day / 1 Day / >2 Days buckets are recomputed from that raw data
-on *every* Streamlit rerun using date.today() at render time. That
-way, if the day rolls over while the page is left open between
-fetches, the buckets update immediately rather than waiting for the
-next API pull.
+on *every* Streamlit rerun using the current Adelaide date at render
+time (see adelaide_today()). That way, if the day rolls over while
+the page is left open between fetches, the buckets update immediately
+rather than waiting for the next API pull.
+
+Timezone: all "today"/"now" values used by this app (bucketing and
+the "Last updated" timestamp) are anchored to Australia/Adelaide via
+Python's zoneinfo, regardless of what timezone the host server runs
+in (e.g. PythonAnywhere typically runs UTC). If deploying and you hit
+a "No time zone found" error, install the `tzdata` package (add it to
+requirements.txt) - some minimal Linux images don't ship the IANA
+timezone database that zoneinfo needs.
 """
 
 import html
@@ -43,6 +51,28 @@ from datetime import date, datetime
 import pandas as pd
 import requests
 import streamlit as st
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:  # pragma: no cover - very old Python fallback
+    from backports.zoneinfo import ZoneInfo
+
+# All "today"/"now" references in this app are anchored to Adelaide,
+# South Australia, regardless of what timezone the host server (e.g.
+# PythonAnywhere) runs in. Adelaide observes daylight saving (ACST/ACDT,
+# UTC+9:30 / +10:30), so a fixed offset would drift twice a year -
+# ZoneInfo("Australia/Adelaide") handles that transition correctly.
+ADELAIDE_TZ = ZoneInfo("Australia/Adelaide")
+
+
+def adelaide_now():
+    """Current datetime in Adelaide, independent of server timezone."""
+    return datetime.now(ADELAIDE_TZ)
+
+
+def adelaide_today():
+    """Current date in Adelaide, independent of server timezone."""
+    return adelaide_now().date()
 
 try:
     from streamlit_autorefresh import st_autorefresh
@@ -157,11 +187,15 @@ def build_oif_df(records):
 
 
 def get_day_bucket(etp_str, today=None):
-    """Map a 'YYYY-MM-DD' ETP string to a DAY_BUCKETS entry relative to `today`."""
+    """Map a 'YYYY-MM-DD' ETP string to a DAY_BUCKETS entry relative to `today`.
+
+    `today` defaults to the current date in Adelaide (see adelaide_today()),
+    not the host server's local date.
+    """
     if not etp_str:
         return None
     if today is None:
-        today = date.today()
+        today = adelaide_today()
 
     try:
         etp_date = datetime.strptime(etp_str, "%Y-%m-%d").date()
@@ -181,12 +215,13 @@ def get_day_bucket(etp_str, today=None):
 def build_monitor_table(df, today=None):
     """Turn a build_oif_df() DataFrame into {status: {bucket: [OIF, ...]}}.
 
-    `today` is resolved fresh (date.today()) on every call unless
-    explicitly overridden, so callers that want up-to-the-render-moment
-    buckets should simply call this with no `today` argument each time
-    they render, rather than caching its output across reruns.
+    `today` is resolved fresh (Adelaide's current date, via
+    adelaide_today()) on every call unless explicitly overridden, so
+    callers that want up-to-the-render-moment buckets should simply
+    call this with no `today` argument each time they render, rather
+    than caching its output across reruns.
     """
-    today = today or date.today()
+    today = today or adelaide_today()
     table = {status: {bucket: [] for bucket in DAY_BUCKETS} for status in STATUSES}
 
     if df is None or df.empty:
@@ -266,7 +301,10 @@ with st.sidebar:
             "background polling)."
         )
 
-    st.caption(f"Today's date used for bucketing: {date.today().isoformat()}")
+    st.caption(
+        f"Adelaide time now: {adelaide_now().strftime('%Y-%m-%d %H:%M:%S %Z')} "
+        f"(bucketing uses this date)"
+    )
 
 status_placeholder = st.empty()
 status_placeholder.caption(st.session_state.status_msg)
@@ -285,7 +323,7 @@ def fetch_and_store():
         records = get_all_oif_data(token, statuses=STATUSES, progress=progress)
         df = build_oif_df(records)
         st.session_state.latest_df = df
-        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        ts = adelaide_now().strftime("%Y-%m-%d %H:%M:%S %Z")
         st.session_state.status_msg = f"Last updated: {ts}"
     except Exception as exc:
         st.session_state.status_msg = f"Error: {exc}"
