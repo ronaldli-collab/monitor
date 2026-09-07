@@ -26,11 +26,18 @@ deployment well), this reads the token in this order:
     1. st.secrets["TOKEN"]           (recommended - .streamlit/secrets.toml)
     2. environment variable OIF_TOKEN
     3. a manual text-input box in the sidebar (session-only, not saved)
+
+Day-bucket freshness: the raw API data is only re-pulled on a fetch
+(manual click or the configured auto-refresh interval), but the
+Same Day / 1 Day / >2 Days buckets are recomputed from that raw data
+on *every* Streamlit rerun using date.today() at render time. That
+way, if the day rolls over while the page is left open between
+fetches, the buckets update immediately rather than waiting for the
+next API pull.
 """
 
 import html
 import os
-import time
 from datetime import date, datetime
 
 import pandas as pd
@@ -172,9 +179,18 @@ def get_day_bucket(etp_str, today=None):
 
 
 def build_monitor_table(df, today=None):
-    """Turn a build_oif_df() DataFrame into {status: {bucket: [OIF, ...]}}."""
+    """Turn a build_oif_df() DataFrame into {status: {bucket: [OIF, ...]}}.
+
+    `today` is resolved fresh (date.today()) on every call unless
+    explicitly overridden, so callers that want up-to-the-render-moment
+    buckets should simply call this with no `today` argument each time
+    they render, rather than caching its output across reruns.
+    """
     today = today or date.today()
     table = {status: {bucket: [] for bucket in DAY_BUCKETS} for status in STATUSES}
+
+    if df is None or df.empty:
+        return table
 
     for _, row in df.iterrows():
         status = row["Status"]
@@ -203,7 +219,11 @@ def resolve_token():
 st.set_page_config(page_title="OIF Monitor", layout="wide")
 
 # ---- session state defaults ----
-st.session_state.setdefault("latest_table", None)
+# NOTE: we now cache the RAW dataframe, not the pre-bucketed table.
+# The bucketed table is rebuilt from this raw df on every rerun using
+# today's date at render time, so bucket boundaries never go stale
+# between fetches even if the day rolls over while the page is open.
+st.session_state.setdefault("latest_df", None)
 st.session_state.setdefault("status_msg", "Not fetched yet.")
 st.session_state.setdefault("auto_refresh", True)
 st.session_state.setdefault("interval_seconds", DEFAULT_REFRESH_SECONDS)
@@ -246,6 +266,8 @@ with st.sidebar:
             "background polling)."
         )
 
+    st.caption(f"Today's date used for bucketing: {date.today().isoformat()}")
+
 status_placeholder = st.empty()
 status_placeholder.caption(st.session_state.status_msg)
 
@@ -262,8 +284,7 @@ def fetch_and_store():
 
         records = get_all_oif_data(token, statuses=STATUSES, progress=progress)
         df = build_oif_df(records)
-        table = build_monitor_table(df)
-        st.session_state.latest_table = table
+        st.session_state.latest_df = df
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         st.session_state.status_msg = f"Last updated: {ts}"
     except Exception as exc:
@@ -279,7 +300,7 @@ if HAVE_AUTOREFRESH and st.session_state.auto_refresh:
 
 should_fetch = (
     refresh_clicked
-    or st.session_state.latest_table is None
+    or st.session_state.latest_df is None
     or (HAVE_AUTOREFRESH and st.session_state.auto_refresh)
 )
 
@@ -288,8 +309,11 @@ if should_fetch:
 
 status_placeholder.caption(st.session_state.status_msg)
 
-# ---- render grid ----
-table = st.session_state.latest_table
+# ---- rebuild the bucketed table fresh on every rerun ----
+# This is the key fix: bucketing always uses "now", even on reruns
+# that didn't trigger a new API fetch (e.g. someone just toggled a
+# sidebar control, or the day changed since the last fetch).
+table = build_monitor_table(st.session_state.latest_df)
 
 # CSS for the grid: uniform cell size per row, a light-gray count
 # section (big, bold, centered) sitting above an always-visible,
@@ -350,7 +374,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-if table is None:
+if st.session_state.latest_df is None:
     st.info("Waiting for first successful fetch.")
 else:
     grid_html = ['<div class="oif-grid">']
