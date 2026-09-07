@@ -292,19 +292,36 @@ table = st.session_state.latest_table
 st.markdown(
     """
     <style>
+    /* make every column in a row stretch to the same height as its
+       tallest sibling, so cells within a bucket row line up */
+    div[data-testid="stHorizontalBlock"] {
+        align-items: stretch;
+    }
+    div[data-testid="column"] {
+        display: flex;
+    }
+    div[data-testid="column"] > div {
+        width: 100%;
+    }
+
     .oif-cell {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
         border: 1px solid rgba(128, 128, 128, 0.3);
         border-radius: 8px;
         padding: 10px;
         margin-bottom: 8px;
-        min-height: 60px;
     }
     .oif-count {
         text-align: center;
-        font-size: 42px;
+        font-size: 20px;
         font-weight: 700;
         line-height: 1.1;
-        margin-bottom: 6px;
+        margin-bottom: 8px;
+        background-color: rgba(128, 128, 128, 0.15);
+        border-radius: 6px;
+        padding: 6px 0;
     }
     .oif-list {
         white-space: pre-wrap;
