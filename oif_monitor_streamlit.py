@@ -103,6 +103,13 @@ DAY_BUCKETS = ["Same Day", "1 Day", ">2 Days"]
 
 DEFAULT_REFRESH_SECONDS = 60
 
+# OIF numbers to hide from the monitor entirely (e.g. known bad data,
+# test orders, one-offs you don't want cluttering the grid). Add
+# entries as strings, matching however they show up in the OIF
+# column, e.g.:
+#     IGNORED_OIFS = {"OIF-10293", "OIF-10450"}
+IGNORED_OIFS = set()
+
 
 # ============================================================
 # Data pipeline (unchanged logic)
@@ -243,7 +250,7 @@ def get_day_bucket(etp_str, today=None):
         return ">2 Days"
 
 
-def build_monitor_table(df, today=None):
+def build_monitor_table(df, today=None, ignored_oifs=None):
     """Turn a build_oif_df() DataFrame into {status: {bucket: [OIF, ...]}}.
 
     `today` is resolved fresh (Adelaide's current date, via
@@ -251,18 +258,31 @@ def build_monitor_table(df, today=None):
     callers that want up-to-the-render-moment buckets should simply
     call this with no `today` argument each time they render, rather
     than caching its output across reruns.
+
+    `ignored_oifs` (defaults to the IGNORED_OIFS config set) lists OIF
+    numbers to leave out of the table entirely - they're compared as
+    strings so it doesn't matter whether the source data has them as
+    ints or strings.
     """
     today = today or adelaide_today()
+    if ignored_oifs is None:
+        ignored_oifs = IGNORED_OIFS
+    ignored_oifs = {str(x) for x in ignored_oifs}
+
     table = {status: {bucket: [] for bucket in DAY_BUCKETS} for status in STATUSES}
 
     if df is None or df.empty:
         return table
 
     for _, row in df.iterrows():
+        oif = row["OIF"]
+        if str(oif) in ignored_oifs:
+            continue
+
         status = row["Status"]
         bucket = get_day_bucket(row["ETP"], today)
         if status in table and bucket in DAY_BUCKETS:
-            table[status][bucket].append(row["OIF"])
+            table[status][bucket].append(oif)
 
     return table
 
