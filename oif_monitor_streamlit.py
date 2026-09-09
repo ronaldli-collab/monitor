@@ -35,6 +35,13 @@ time (see adelaide_today()). That way, if the day rolls over while
 the page is left open between fetches, the buckets update immediately
 rather than waiting for the next API pull.
 
+Business-day bucketing: "1 Day" and ">2 Days" are counted in working
+days (Mon-Fri) only - weekends are skipped when deciding how far away
+an ETP is. So an ETP that falls on the next business day (e.g. Friday
+-> Monday) is still "1 Day", not ">2 Days", and Saturday/Sunday are
+never counted as the "1 day away" business day themselves. See
+business_days_between() / get_day_bucket().
+
 Timezone: all "today"/"now" values used by this app (bucketing and
 the "Last updated" timestamp) are anchored to Australia/Adelaide via
 Python's zoneinfo, regardless of what timezone the host server runs
@@ -48,6 +55,7 @@ import html
 import os
 from datetime import date, datetime
 
+import numpy as np
 import pandas as pd
 import requests
 import streamlit as st
@@ -186,11 +194,29 @@ def build_oif_df(records):
     return pd.DataFrame(rows, columns=SHEET_COLUMNS)
 
 
+def business_days_between(start_date, end_date):
+    """Number of business days (Mon-Fri) in the half-open range [start_date, end_date).
+
+    Weekends are skipped entirely, so e.g. a Friday `start_date` and a
+    Monday `end_date` returns 1 (only the Friday counts - the
+    intervening Sat/Sun are not business days). `start_date` and
+    `end_date` are plain `datetime.date` objects; `end_date` is
+    expected to be on or after `start_date`.
+    """
+    return int(np.busday_count(start_date, end_date))
+
+
 def get_day_bucket(etp_str, today=None):
     """Map a 'YYYY-MM-DD' ETP string to a DAY_BUCKETS entry relative to `today`.
 
     `today` defaults to the current date in Adelaide (see adelaide_today()),
     not the host server's local date.
+
+    Bucketing counts working days (Mon-Fri) only:
+      - "Same Day"  : ETP is today or in the past
+      - "1 Day"     : ETP is the next business day (weekends don't
+                       count, so a Friday -> Monday ETP is still "1 Day")
+      - ">2 Days"   : ETP is two or more business days away
     """
     if not etp_str:
         return None
@@ -202,11 +228,16 @@ def get_day_bucket(etp_str, today=None):
     except (TypeError, ValueError):
         return None
 
-    delta = (etp_date - today).days
-
-    if delta <= 0:
+    if etp_date <= today:
         return "Same Day"
-    elif delta == 1:
+
+    business_days_ahead = business_days_between(today, etp_date)
+
+    # business_days_ahead is normally >=1 once etp_date > today, but
+    # can be 0 if `today` itself falls on a weekend (e.g. the app is
+    # left open over a Saturday) - treat that the same as "1 Day"
+    # since the very next business day is still the nearest one.
+    if business_days_ahead <= 1:
         return "1 Day"
     else:
         return ">2 Days"
@@ -303,7 +334,7 @@ with st.sidebar:
 
     st.caption(
         f"Adelaide time now: {adelaide_now().strftime('%Y-%m-%d %H:%M:%S %Z')} "
-        f"(bucketing uses this date)"
+        f"(bucketing uses this date, working days only)"
     )
 
 status_placeholder = st.empty()
