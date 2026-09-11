@@ -108,7 +108,7 @@ DEFAULT_REFRESH_SECONDS = 60
 # entries as strings, matching however they show up in the OIF
 # column, e.g.:
 #     IGNORED_OIFS = {"OIF-10293", "OIF-10450"}
-IGNORED_OIFS = set(["OIF694766"])
+IGNORED_OIFS = set(["OIF694766", "OIF691894"])
 
 
 # ============================================================
