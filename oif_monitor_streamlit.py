@@ -251,7 +251,7 @@ def get_day_bucket(etp_str, today=None):
 
 
 def build_monitor_table(df, today=None, ignored_oifs=None):
-    """Turn a build_oif_df() DataFrame into {status: {bucket: [OIF, ...]}}.
+    """Turn a build_oif_df() DataFrame into {status: {bucket: [(OIF, OSW), ...]}}.
 
     `today` is resolved fresh (Adelaide's current date, via
     adelaide_today()) on every call unless explicitly overridden, so
@@ -263,6 +263,9 @@ def build_monitor_table(df, today=None, ignored_oifs=None):
     numbers to leave out of the table entirely - they're compared as
     strings so it doesn't matter whether the source data has them as
     ints or strings.
+
+    Each bucket's list holds (oif, osw) tuples so the grid can render
+    the OIF alongside its OSW number.
     """
     today = today or adelaide_today()
     if ignored_oifs is None:
@@ -282,7 +285,7 @@ def build_monitor_table(df, today=None, ignored_oifs=None):
         status = row["Status"]
         bucket = get_day_bucket(row["ETP"], today)
         if status in table and bucket in DAY_BUCKETS:
-            table[status][bucket].append(oif)
+            table[status][bucket].append((oif, row["OSW"]))
 
     return table
 
@@ -477,11 +480,17 @@ else:
             f'<div class="oif-bucket-label">{html.escape(bucket)}</div>'
         )
         for status in STATUSES:
-            oifs = table[status][bucket]
-            count = len(oifs)
+            entries = table[status][bucket]
+            count = len(entries)
 
-            if oifs:
-                list_body = "<br>".join(html.escape(str(oif)) for oif in oifs)
+            if entries:
+                def _fmt(oif, osw):
+                    oif_text = html.escape(str(oif))
+                    if osw:
+                        return f"{oif_text}({html.escape(str(osw))})"
+                    return oif_text
+
+                list_body = "<br>".join(_fmt(oif, osw) for oif, osw in entries)
                 list_html = f'<div class="oif-list">{list_body}</div>'
             else:
                 list_html = '<div class="oif-list"><div class="oif-list-empty">(none)</div></div>'
